@@ -1,0 +1,357 @@
+#include "HelloWorldScene.h"
+#include "GameOverScene.h"
+#include "Monster.h"
+
+#include "SimpleAudioEngine.h"
+
+using namespace cocos2d;
+
+HelloWorld::~HelloWorld()
+{
+	if (_targets)
+	{
+		_targets->release();
+		_targets = NULL;
+	}
+
+	if (_projectiles)
+	{
+		_projectiles->release();
+		_projectiles = NULL;
+	}
+    
+    _player = NULL;
+
+	// cpp don't need to call super dealloc
+	// virtual destructor will do this
+}
+
+HelloWorld::HelloWorld()
+:_targets(NULL)
+,_projectiles(NULL)
+,_projectilesDestroyed(0)
+{
+}
+
+CCScene* HelloWorld::scene()
+{
+	CCScene * scene = NULL;
+	do 
+	{
+		// 'scene' is an autorelease object
+		scene = CCScene::node();
+		CC_BREAK_IF(! scene);
+
+		// 'layer' is an autorelease object
+		HelloWorld *layer = HelloWorld::node();
+		CC_BREAK_IF(! layer);
+
+		// add layer as a child to scene
+		scene->addChild(layer);
+	} while (0);
+
+	// return the scene
+	return scene;
+}
+
+// on "init" you need to initialize your instance
+bool HelloWorld::init()
+{
+	bool bRet = false;
+	do 
+	{
+		//////////////////////////////////////////////////////////////////////////
+		// super init first
+		//////////////////////////////////////////////////////////////////////////
+
+		CC_BREAK_IF(! CCColorLayer::initWithColor( ccc4(255,255,255,255) ) );
+
+		//////////////////////////////////////////////////////////////////////////
+		// add your codes below...
+		//////////////////////////////////////////////////////////////////////////
+
+		// 1. Add a menu item with "X" image, which is clicked to quit the program.
+
+		// Create a "close" menu item with close icon, it's an auto release object.
+		CCMenuItemImage *pCloseItem = CCMenuItemImage::itemFromNormalImage(
+			"CloseNormal.png",
+			"CloseSelected.png",
+			this,
+			menu_selector(HelloWorld::menuCloseCallback));
+		CC_BREAK_IF(! pCloseItem);
+
+		// Place the menu item bottom-right conner.
+		pCloseItem->setPosition(ccp(CCDirector::sharedDirector()->getWinSize().width - 20, 20));
+
+		// Create a menu with the "close" menu item, it's an auto release object.
+		CCMenu* pMenu = CCMenu::menuWithItems(pCloseItem, NULL);
+		pMenu->setPosition(CCPointZero);
+		CC_BREAK_IF(! pMenu);
+
+		// Add the menu to HelloWorld layer as a child layer.
+		this->addChild(pMenu, 1);
+
+		/////////////////////////////
+		// 2. add your codes below...
+
+		CCSize winSize = CCDirector::sharedDirector()->getWinSize();
+		_player = CCSprite::spriteWithFile("Player2.jpeg"); 
+//			CCRectMake(0, 0, 27, 40) );
+		_player->setPosition( ccp(_player->getContentSize().width/2, winSize.height/2) );
+		this->addChild(_player);
+
+		this->schedule( schedule_selector(HelloWorld::gameLogic), 1.0 );
+
+		this->setIsTouchEnabled(true);
+
+		_targets = new CCMutableArray<CCSprite*>;
+		_projectiles = new CCMutableArray<CCSprite*>;
+
+		this->schedule( schedule_selector(HelloWorld::update) );
+
+		CocosDenshion::SimpleAudioEngine::sharedEngine()->playBackgroundMusic("background-music-aac.wav", true);
+
+		bRet = true;
+	} while (NULL);
+
+	return bRet;
+}
+
+void HelloWorld::menuCloseCallback(CCObject* pSender)
+{
+	// "close" menu item clicked
+	CCDirector::sharedDirector()->end();
+}
+
+// cpp with cocos2d-x
+void HelloWorld::addTarget()
+{
+	//CCSprite *target = CCSprite::spriteWithFile("Target.png", 
+	//	CCRectMake(0,0,27,40) );
+
+    //CCSprite *target = [CCSprite spriteWithFile:@"Target.png" rect:CGRectMake(0, 0, 27, 40)]; 
+    Monster* target = NULL;
+    if ((arc4random() % 2) == 0) {
+        target = WeakAndFastMonster::monster();
+    } else {
+        target = StrongAndSlowMonster::monster();
+    }
+	
+    // Determine where to spawn the target along the Y axis
+	CCSize winSize = CCDirector::sharedDirector()->getWinSize();
+	int minY = target->getContentSize().height/2;
+	int maxY = winSize.height -  target->getContentSize().height/2;
+	int rangeY = maxY - minY;
+	// srand( TimGetTicks() );
+	int actualY = ( rand() % rangeY ) + minY;
+
+	// Create the target slightly off-screen along the right edge,
+	// and along a random position along the Y axis as calculated
+	target->setPosition( 
+		ccp(winSize.width + (target->getContentSize().width/2), 
+		actualY) );
+	this->addChild(target);
+
+	// Determine speed of the target
+	int minDuration = target->getMinMoveDuration();
+	int maxDuration = target->getMaxMoveDuration();
+    
+	int rangeDuration = maxDuration - minDuration;
+	// srand( TimGetTicks() );
+	int actualDuration = ( rand() % rangeDuration ) + minDuration;
+
+	// Create the actions
+	CCFiniteTimeAction* actionMove = 
+		CCMoveTo::actionWithDuration( (ccTime)actualDuration, 
+		ccp(0 - target->getContentSize().width/2, actualY) );
+	CCFiniteTimeAction* actionMoveDone = 
+		CCCallFuncN::actionWithTarget( this, 
+		callfuncN_selector(HelloWorld::spriteMoveFinished));
+	target->runAction( CCSequence::actions(actionMove, 
+		actionMoveDone, NULL) );
+
+	// Add to targets array
+	target->setTag(1);
+	_targets->addObject(target);
+}
+
+void HelloWorld::spriteMoveFinished(CCNode* sender)
+{
+	CCSprite *sprite = (CCSprite *)sender;
+	this->removeChild(sprite, true);
+
+	if (sprite->getTag() == 1)  // target
+	{
+		_targets->removeObject(sprite);
+
+		GameOverScene *gameOverScene = GameOverScene::node();
+		gameOverScene->getLayer()->getLabel()->setString("You Lose :[");
+		CCDirector::sharedDirector()->replaceScene(gameOverScene);
+
+	}
+	else if (sprite->getTag() == 2) // projectile
+	{
+		_projectiles->removeObject(sprite);
+	}
+}
+
+void HelloWorld::gameLogic(ccTime dt)
+{
+	this->addTarget();
+}
+
+// cpp with cocos2d-x
+void HelloWorld::ccTouchesEnded(CCSet* touches, CCEvent* event)
+{
+	// Choose one of the touches to work with
+	CCTouch* touch = (CCTouch*)( touches->anyObject() );
+	CCPoint location = touch->locationInView(touch->view());
+
+	CCLog("++++++++befor  x:%f, y:%f", location.x, location.y);
+
+	location = CCDirector::sharedDirector()->convertToGL(location);
+
+	CCLog("++++++++after  x:%f, y:%f", location.x, location.y);
+
+	// Set up initial location of projectile
+	CCSize winSize = CCDirector::sharedDirector()->getWinSize();
+	
+    _nextProjectile = CCSprite::spriteWithFile("Projectile2.jpeg"); 
+		//CCRectMake(0, 0, 20, 20));
+	_nextProjectile->setPosition( ccp(20, winSize.height/2) );
+
+	// Determinie offset of location to projectile
+	int offX = location.x - _nextProjectile->getPosition().x;
+	int offY = location.y - _nextProjectile->getPosition().y;
+
+	// Bail out if we are shooting down or backwards
+	if (offX <= 0) return;
+
+	// Determine where we wish to shoot the projectile to
+	int realX = winSize.width + (_nextProjectile->getContentSize().width/2);
+	float ratio = (float)offY / (float)offX;
+	int realY = (realX * ratio) + _nextProjectile->getPosition().y;
+	CCPoint realDest = ccp(realX, realY);
+
+	// Determine the length of how far we're shooting
+	int offRealX = realX - _nextProjectile->getPosition().x;
+	int offRealY = realY - _nextProjectile->getPosition().y;
+	float length = sqrtf((offRealX * offRealX) + (offRealY*offRealY));
+	float velocity = 480/1; // 480pixels/1sec
+	float realMoveDuration = length/velocity;
+    
+    // Determine angle to face
+    float angleRadians = atanf((float)offRealY / (float)offRealX);
+    float angleDegrees = CC_RADIANS_TO_DEGREES(angleRadians);
+    float cocosAngle = -1 * angleDegrees;
+//    _player->setRotation(cocosAngle);
+    float rotateSpeed = 0.5 / M_PI; // Would take 0.5 seconds to rotate 0.5 radians, or half a circle
+    float rotateDuration = fabs(angleRadians * rotateSpeed);    
+    _player->runAction(CCSequence::actions(CCRotateTo::actionWithDuration(rotateDuration, cocosAngle),
+                                           CCCallFunc::actionWithTarget(this, callfunc_selector(HelloWorld::finishShoot)),
+                                           NULL) );
+
+	// Move projectile to actual endpoint
+	_nextProjectile->runAction( CCSequence::actions(
+		CCMoveTo::actionWithDuration(realMoveDuration, realDest),
+		CCCallFuncN::actionWithTarget(this, 
+
+		callfuncN_selector(HelloWorld::spriteMoveFinished)), 
+		NULL) );
+
+	// Add to projectiles array
+	_nextProjectile->setTag(2);
+	_projectiles->addObject(_nextProjectile);
+
+	CocosDenshion::SimpleAudioEngine::sharedEngine()->playEffect("pew-pew-lei.wav");
+}
+
+void HelloWorld::finishShoot()
+{
+    this->addChild(_nextProjectile);
+    _projectiles->addObject(_nextProjectile);
+    
+    // Release
+    _nextProjectile = NULL;
+}
+
+void HelloWorld::update(ccTime dt)
+{
+	CCMutableArray<CCSprite*> *projectilesToDelete = new CCMutableArray<CCSprite*>;
+    
+	CCMutableArray<CCSprite*>::CCMutableArrayIterator it, jt;
+
+	for (it = _projectiles->begin(); it != _projectiles->end(); it++)
+	{
+		CCSprite *projectile =*it;
+		CCRect projectileRect = CCRectMake(
+			projectile->getPosition().x - (projectile->getContentSize().width/2),
+			projectile->getPosition().y - (projectile->getContentSize().height/2),
+			projectile->getContentSize().width,
+			projectile->getContentSize().height);
+        
+        bool monsterHit = false;
+
+		CCMutableArray<CCSprite*>*targetsToDelete =new CCMutableArray<CCSprite*>;
+
+		for (jt = _targets->begin(); jt != _targets->end(); jt++)
+		{
+			CCSprite *target =*jt;
+			CCRect targetRect = CCRectMake(
+				target->getPosition().x - (target->getContentSize().width/2),
+				target->getPosition().y - (target->getContentSize().height/2),
+				target->getContentSize().width,
+				target->getContentSize().height);
+
+			if (CCRect::CCRectIntersectsRect(projectileRect, targetRect))
+			{
+                monsterHit = true;
+                Monster *monster = (Monster *)target;
+                monster->setCurHp(monster->getCurHp() - 1);
+                if (monster->getCurHp() <= 0) {
+                    targetsToDelete->addObject(target);
+                }
+                break;
+			}
+		}
+
+		for (jt = targetsToDelete->begin(); jt != targetsToDelete->end(); jt++)
+		{
+			CCSprite *target =*jt;
+			_targets->removeObject(target);
+			this->removeChild(target, true);
+
+			_projectilesDestroyed++;
+			if (_projectilesDestroyed > 1)
+			{
+				GameOverScene *gameOverScene = GameOverScene::node();
+				gameOverScene->getLayer()->getLabel()->setString("You Win!");
+				CCDirector::sharedDirector()->replaceScene(gameOverScene);
+			}
+		}
+
+        if (monsterHit) {
+            projectilesToDelete->addObject(projectile);
+            CocosDenshion::SimpleAudioEngine::sharedEngine()->playEffect("explosion.caf");
+        }
+		if (targetsToDelete->count() > 0)
+		{
+			projectilesToDelete->addObject(projectile);
+		}
+		targetsToDelete->release();
+	}
+
+	for (it = projectilesToDelete->begin(); it != projectilesToDelete->end(); it++)
+	{
+		CCSprite* projectile =*it;
+		_projectiles->removeObject(projectile);
+		this->removeChild(projectile, true);
+	}
+	projectilesToDelete->release();
+}
+
+void HelloWorld::registerWithTouchDispatcher()
+{
+	// CCTouchDispatcher::sharedDispatcher()->addTargetedDelegate(this,0,true);
+	CCTouchDispatcher::sharedDispatcher()->addStandardDelegate(this,0);
+}
